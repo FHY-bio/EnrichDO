@@ -1,3 +1,14 @@
+<<<<<<< HEAD
 inst/doc
 /doc/
 /Meta/
+=======
+.DS_Store
+vignettes/.DS_Store
+.svn
+*~
+.Rhistory
+docs/__pycache__
+docs/__init__.py
+__init__.pyc
+>>>>>>> 45373c2e8354f60cc3e06dc70838fe76c7180690
