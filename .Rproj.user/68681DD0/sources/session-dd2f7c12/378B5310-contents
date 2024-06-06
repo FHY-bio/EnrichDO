@@ -1,0 +1,84 @@
+setwd("E:/科研/R方法/data/data/")
+#读入拷贝数片段信息
+cnv<-read.csv("CNV_results/all_lesions.conf_90.txt",header = T,sep="\t",check.names = F)
+a<-data.frame(chr=rep(0,dim(cnv)[1]),start=rep(0,dim(cnv)[1]),end=rep(0,dim(cnv)[1]))
+for(i in 1:dim(cnv)[1]){
+  str1<-unlist(strsplit(cnv[i,5],"(",fixed = T))
+  str2<-unlist(strsplit(str1[1],":",fixed = T))
+  str3<-unlist(strsplit(str2[2],"-",fixed = T))
+  a[i,1]<-str2[1]
+  a[i,2]<-str3[1]
+  a[i,3]<-str3[2]
+}
+cnv<-cbind(a,cnv)
+
+#根据基因的位置信息将其比对到拷贝缺失片段上
+gene<-read.csv("protein_coding_gene_hg38.txt",header = F,sep="\t",check.names = F)
+result<-matrix(0,ncol=2,nrow=dim(gene)[1])
+for(i in 1:dim(gene)[1]){
+  chr<-gene[i,3]
+  start<-gene[i,5]
+  end<-gene[i,6]
+
+  result[i,1]<-gene[i,1]
+  for(j in 1:dim(cnv)[1]){
+    t_chr<-cnv[j,1]
+    t_start<-cnv[j,2]
+    t_end<-cnv[j,3]
+    if(chr==t_chr){
+      if(start>t_start&start<t_end){
+        result[i,2]<-cnv[j,4]
+      }else if(end>t_start&end<t_end){
+        result[i,2]<-cnv[j,4]
+      }
+    }
+  }
+}
+
+
+#差异表达
+gene_exp<-as.matrix(read.csv("gene_exp_matrix.txt",sep="\t",header=T,check.names = F))
+exp<-gene_exp
+sample<-sapply(strsplit(colnames(gene_exp),".",fixed = T),function(x){x[4]})
+sample<-ifelse(sample=="01","T","n")
+
+#差异分析——limma
+library(limma)
+dim(exp)
+# 做分组矩阵
+design <- model.matrix(~0+factor(sample))
+colnames(design)=levels(factor(sample))
+rownames(design)=colnames(exp)
+design  #分组矩阵
+
+# 做比较矩阵
+# contrast.matrix<-makeContrasts(paste0(unique(group_list),collapse = "-"),levels = design)
+# contrast.matrix ##这个矩阵声明，我们要把treat组和contorl组进行差异分析比较
+# -1和1的意思是contorl是用来被比的，treat是来比的
+contrast.matrix<-makeContrasts(paste0(c("N","T"),collapse = "-"),levels = design)
+contrast.matrix
+#到此，做差异分析所需要的三个矩阵就做好了：表达矩阵、分组矩阵、差异比较矩阵
+#我们已经制作好了必要的输入数据，下面开始讲如何使用limma这个包来进行差异分析了！
+
+##step1
+fit <- lmFit(exp,design) #线性模型拟合
+##step2
+fit2 <- contrasts.fit(fit, contrast.matrix) #根据对比模型进行差值计算
+fit2 <- eBayes(fit2)  #贝叶斯检验
+##eBayes() with trend=TRUE
+##step3
+tempOutput = topTable(fit2, coef=1, n=Inf) #生成所有基因的检验结果报表
+dim(tempOutput)
+nrDEG = na.omit(tempOutput)
+colnames(nrDEG)
+head(nrDEG)
+
+foldChange=1
+p=0.05
+q=0.05
+up = (nrDEG$P.Value < p)&(nrDEG$adj.P.Val < q)&(nrDEG$logFC > foldChange)
+down = (nrDEG$P.Value < p)&(nrDEG$adj.P.Val < q)&(nrDEG$logFC < -foldChange)
+nrDEG$change=ifelse(up,"Up",ifelse(down,"Down","NOT"))
+table(nrDEG$change)
+
+diff<-c(row.names(nrDEG[up,]),row.names(nrDEG[down,]))

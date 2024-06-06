@@ -1,0 +1,116 @@
+library(forecast)
+#library(XLConnect)
+library(readxl)
+library(dplyr)
+setwd("E:/ctDNA/我的处理数据和结果/HPV/")
+
+#指标评价，阈值设定
+
+HPV <- read_xlsx("../../老师数据/宫颈癌+HPV结果整理-20210828（1）..xlsx",col_types = "text")
+########################################################清理数据
+colnames(HPV)<-c("class",colnames(HPV)[2:10],"HPV16","HPV18")
+HPV$class<-factor(HPV$class,levels = c(3,2,1),labels = c("low","middle","high"))
+HPV[,4:12]<-apply(HPV[,4:12],2,function(x){as.numeric(x)})
+HPV[,c(4:8,11:12)]<-HPV[,c(4:8,11:12)]/HPV$内参
+
+HPV<-unique(HPV)
+HPV$suoyin<-seq(1:dim(HPV)[1])
+
+#构建熵值法需要的数据
+sourui<-HPV[,c(4:8,11:12)]
+row.names(sourui)<-HPV$样本编号
+
+colnames(sourui)
+#write.csv(sourui,file = "熵值法输入数据.csv",quote = F,fileEncoding = "UTF-8",row.names = F)
+
+#第一步：归一化处理
+min.max.norm <- function(x){
+  (x-min(x))/(max(x)-min(x))
+}
+
+max.min.norm <- function(x){
+  (max(x)-x)/(max(x)-min(x))
+}
+colnames(sourui)
+sourui_1 <- apply(sourui[,-c(2,4,5)],2,min.max.norm)  #正向指标
+sourui_2 <- apply(sourui[,c(2,4,5)],2,max.min.norm)   #负向指标
+
+sourui_t <- cbind(sourui_1,sourui_2)
+
+#第二步：求出所有样本对指标Xj的贡献总量
+first1 <- function(data)
+{
+  x <- c(data)
+  for(i in 1:length(data))
+    x[i] = data[i]/sum(data[])
+  return(x)
+}
+dataframe <- apply(sourui_t,2,first1)
+
+#第三步：将上步生成的矩阵每个元素变成每个元素与该ln（元素）的积并计算信息熵。
+first2 <- function(data)
+{
+  x <- c(data)
+  for(i in 1:length(data)){
+    if(data[i] == 0){
+      x[i] = 0
+    }else{
+      x[i] = data[i] * log(data[i])
+    }
+  }
+  return(x)
+}
+dataframe1 <- apply(dataframe,2,first2)
+
+k <- 1/log(length(dataframe1[,1]))
+d <- -k * colSums(dataframe1)
+
+#第四步：计算冗余度
+d <- 1-d
+
+#第五步：计算各指标的权重
+w <- d/sum(d)
+
+#第六步：计算每个人的得分,①根据肠癌和术后的类别，划分B14权值②对于既有术前又有术后的人的数据，先统一B12再计算
+w1 <- as.data.frame(w)
+#dataframe0 <- as.data.frame(sourui_t)
+sourui$name=HPV$样本编号
+sourui$class<-HPV$TBS结果
+
+# sourui_twice<-filter(sourui,sourui$名字%in%all$姓名)
+# sourui_once<-filter(sourui,!sourui$名字%in%all$姓名)
+# #
+# twice_name<-unique(sourui_twice$名字)
+# twice_df<-matrix(0,1,dim(sourui_twice)[2],dimnames = list(c(1),colnames(sourui_twice)))
+# for (i in 1:length(twice_name)) {
+#   aa<-as.data.frame(filter(sourui_twice,sourui_twice$名字==twice_name[i]))
+#   for(j in 2:(dim(aa)[1])){
+#     aa[j,1:12]<-as.numeric(aa[j,1:12])*as.numeric(aa[1,1]/aa[j,1])
+#   }
+#
+#   twice_df<-rbind(twice_df,aa)
+# }
+# twice_df<-twice_df[-1,]
+# sourui_result<-rbind(twice_df,sourui_once)
+
+sourui_result<-sourui
+dataframe0 <- sourui_result[,names(w)]
+
+sourui_result$评分 <- 0
+
+for (i in 1:dim(dataframe0)[1]) {
+    sourui_result$评分[i]<-rowSums(dataframe0[i,1:dim(dataframe0)[2]]*w1$w)
+}
+
+
+result<-sourui_result[,c(8:10)]
+result$score<-result$评分*HPV$内参
+result<-arrange(result,score)
+result$color<-factor(result$class,levels=c("NILM/LISL","ASC-US/H","HISL"),labels = c("orange","red","darkred"))
+result$color<-as.character(result$color)
+#write.table(result,"D:/结果.txt",sep = "\t",row.names = F,col.names = T,quote = F)
+barplot(height=result$score,xlab='样本',y=c(0,3000),ylab='得分',main='HPV得分情况',col=result$color, names.arg=result$name)
+
+
+
+

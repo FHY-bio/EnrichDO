@@ -1,0 +1,44 @@
+setwd("E:/科研/R方法/拷贝数剂量效应DSS方法/")
+#读入基因表达数据gene_exp和连续的拷贝数据gene_cnv
+gene_exp<-as.matrix(read.csv("mRNA_exp_FPKM.txt",sep="\t",header=T))
+gene_cnv<-as.matrix(read.csv("CNV_results/all_data_by_genes.txt",header = T,sep="\t",row.names = 1))
+
+gene_cnv<-gene_cnv[,-c(1,2)]#去掉无用信息
+colnames(gene_cnv)<-substr(colnames(gene_cnv),1,15)#提取与表达数据中相同的样本ID
+gene_exp<-log2(gene_exp+0.0001)
+
+#提取表达谱和拷贝数据的相同样本
+com_gene<-intersect(rownames(gene_exp),rownames(gene_cnv))
+com_sample<-intersect(colnames(gene_exp),colnames(gene_cnv))
+
+#提取新表达谱和拷贝数谱
+gene_exp<-gene_exp[com_gene,com_sample]
+gene_cnv<-gene_cnv[com_gene,com_sample]
+gene_exp<-apply(gene_exp, 2, function(x){as.numeric(x)})
+gene_cnv<-apply(gene_cnv, 2, function(x){as.numeric(x)})
+
+
+library(dplyr)
+library(foreach)
+library(doParallel)
+cl <- makeCluster(12)
+registerDoParallel(cl)
+n=6
+DSS_result<-foreach(i =1:dim(gene_exp)[1], .combine = c) %dopar% {
+  lm_result<-lm(gene_exp[i,]~gene_cnv[i,])#进行线性拟合
+  k<-as.numeric(lm_result$coefficients[2])#取拟合的斜率
+
+  loess_result<-loess(gene_exp[i,]~gene_cnv[i,],span = 2/3,degree = 1,family = "symmetric")#进行非线性拟合
+  x<-seq(min(gene_cnv[i,]),max(gene_cnv[i,]),length.out=n)
+  px<-predict(loess_result,newdata = x)
+  z<-outer(px,px,'-')
+  z<-z[lower.tri(z)]
+  z<-sign(z)
+  MS<-2*sum(z)/n*(n-1)
+  DSS<-MS*abs(k)
+  return(DSS)
+  }
+stopImplicitCluster()
+stopCluster(cl)
+
+write.table(DSS_result,file = "DSS结果.txt",row.names = F,col.names = F,quote = F)

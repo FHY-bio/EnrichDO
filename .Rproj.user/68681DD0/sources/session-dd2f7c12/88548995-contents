@@ -1,0 +1,42 @@
+library(openxlsx)
+#install.packages("pacman")
+pacman::p_load(randomForest,caret,pROC)
+
+datat <- read.xlsx("E:\\ctDNA\\老师数据\\宫颈癌+HPV结果整理-20210828（1）..xlsx")
+colnames(datat)<-c("class","TBS",colnames(datat)[3:10],"HPV16","HPV18")
+summary(datat)
+dim(datat)
+
+datat[,4:12]<-apply(datat[,4:12],2,function(x){as.numeric(x)})
+#datat[,c(4:8,11:12)]<-datat[,c(4:8,11:12)]/datat$内参，，，，，除以内参之后，该模型效果稍差
+datat<-datat[,c(2,4:8,11:12)]
+
+trainlist <- createDataPartition(datat$TBS,p=0.8,list = FALSE)
+trainset <- datat[trainlist,]
+testset <- datat[-trainlist,]
+
+set.seed(6678)
+rf.train <- randomForest(as.factor(TBS) ~ .,data = trainset,importance = TRUE,na.action = na.pass)
+rf.train
+plot(rf.train,main = "randomforest origin")
+
+
+importance(rf.train)
+varImpPlot(rf.train)
+
+set.seed(6668)
+rf.test <- predict(rf.train,newdata=testset,type="class")
+rf.cf <- caret::confusionMatrix(as.factor(rf.test),as.factor(testset$TBS))
+rf.cf
+
+rf.test2 <- predict(rf.train,newdata = testset,type = "prob")
+head(rf.test2)
+
+roc.rf <- multiclass.roc(testset$TBS,rf.test2)
+roc.rf
+
+roc.rf_1 <- multiclass.roc(testset$TBS,rf.test2[,1])
+plot(roc.rf_1$rocs[[1]],col="blue",legacy.axes=T,print.auc=TRUE)
+plot.roc(roc.rf_1$rocs[[2]],add=TRUE,col="black",legacy.axes=T,print.auc=TRUE)
+plot.roc(roc.rf_1$rocs[[3]],add=TRUE,col="red",legacy.axes=T,print.auc=TRUE)
+auc(roc.rf_1)

@@ -1,0 +1,69 @@
+setwd("E:/ctDNA/")
+library(readxl)
+library(MASS)
+library(caret)
+library(brant)
+library(pROC)
+library(stringr)
+HPV <- read_xlsx("老师数据/宫颈癌+HPV结果整理-20210828（1）..xlsx",col_types = "text")
+colnames(HPV)<-c("class",colnames(HPV)[2:10],"HPV16","HPV18")
+HPV$class<-factor(HPV$class,levels = c(3,2,1),labels = c("low","middle","high"))
+HPV[,4:12]<-apply(HPV[,4:12],2,function(x){as.numeric(x)})
+HPV[,c(4:8,11:12)]<-HPV[,c(4:8,11:12)]/HPV$内参
+
+#数据集划分
+ind <- createDataPartition(HPV$class,
+                           p=0.8,
+                           list = FALSE)
+train_data <- HPV[ind,] # 训练集
+test_data <- HPV[-ind,] # 测试集
+
+#标准化,对模型无影响
+# HPV_stand<-HPV[,c(1,4:8,11:12)]
+# train_data <- HPV_stand[ind,]
+# test_data <- HPV_stand[-ind,]
+
+
+#####单因素分析------------
+fit0<-polr(ordered(class)~ 1, data=train_data)#####空模型
+# fit1<-polr(ordered(class)~ +sex, data=data)
+# summary(fit1)
+
+######多因素分析模型构建
+#Hess = TRUE：指定是否计算Hessian矩阵，这里设置为TRUE表示计算。model = TRUE：指定是否返回拟合的模型对象，这里设置为TRUE表示返回模型对象。method = "logistic"：指定了拟合模型所使用的方法，这里设置为"logistic"表示使用Logistic回归方法。
+fit2<-polr(ordered(class)~ +GENE1+GENE2+GENE3+GENE6+GENE7+HPV16+HPV18, data=train_data,Hess = TRUE, model = TRUE,method = "logistic")
+summary(fit2)
+
+##OR以及P值计算
+p <- pnorm(abs(coef(summary(fit2))[, "t value"]),lower.tail = F)*2  #由于上面结果未输出P值，需要手动计算每个回归系数的p值
+p  #输出p值
+OR <- exp(coef(fit2))  #计算OR值
+OR  #输出OR值
+ci <- confint(fit2)  #计算每个回归系数的置信区间
+ci  #输出ci值
+exp(cbind(OR = coef(fit2), ci))  #合并OR值以及置信区间
+
+##效果评估
+brant(fit2)###Omnibus是平行线检验的综合统计量，用于评估整体平行线检验的假设。p值为0.26，大于0.05。在整体上，模型满足平行性检验，可以进行有序多项式logistic回归分析
+anova(fit0,fit2) ####对数似然比检验的p值为1.1e-15，小于显著性水平0.05，证明fit2和fit0之间是有差异的。这意味着在fit0中添加的5个自变量对于拟合模型是有影响的。
+
+#预测
+pred <- predict(fit2, test_data, type = "class")  #预测模型的分类标签
+test_data$pred<-pred
+head(pred)  #输出结果，显示前6位
+
+prob <- predict(fit2, test_data, type = "probs")  #预测模型的类别概率
+head(prob)  #输出结果，显示前6行
+
+test_roc <- multiclass.roc(test_data$class,prob[,1])
+plot(test_roc$rocs[[1]],col="orange")#low和meddle
+plot(test_roc$rocs[[2]],col="red",add=T)#low和high
+plot(test_roc$rocs[[3]],col="darkred",add=T)#meddle和high
+
+text(0.5,0.5,str_c("ROC: ",format(test_roc[["auc"]],digit=2)))
+#plot.roc(logis[[1:2]], add=TRUE, lwd=1.7, col = "red")
+
+
+
+#拟合优度检验
+DescTools::PseudoR2(fit2, which = "all")

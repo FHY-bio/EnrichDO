@@ -1,0 +1,22 @@
+load("E:\\R\\EnrichDO2_new\\EnrichDO\\R\\sysdata.rda")
+library(dplyr)
+
+i=1
+gene_20<-c()
+for (i in 1:100) {
+  doterm_sample<-sample(doterms$DOID[doterm_TF],size = 20,replace = F)
+  gene_sample<-unique(unlist(doterms[which(doterms$DOID%in%doterm_sample),"gene.arr"]))
+  gene_sample<-setdiff(gene_sample,f_gene)
+  gene_20[i]<-length(gene_sample)
+}
+mean(gene_20)
+
+i=1
+gene_30<-c()
+for (i in 1:100) {
+  doterm_sample<-sample(doterms$DOID[doterm_TF],size = 30,replace = F)
+  gene_sample<-unique(unlist(doterms[which(doterms$DOID%in%doterm_sample),"gene.arr"]))
+  gene_sample<-setdiff(gene_sample,f_gene)
+  gene_20[i]<-length(gene_sample)
+}
+mean(gene_20)

@@ -1,0 +1,249 @@
+###################################仿真数据
+setwd("E:/R/EnrichDO2_new/运行结果/4_仿真/")
+library(EnrichDO2)
+library(DOSE)
+library(dplyr)
+library(foreach)
+library(doParallel)
+load("E:/R/EnrichDO2_new/EnrichDO/R/sysdata.rda")
+####范基因提取
+
+# #注释数据
+gene_map<-read.delim("doid_geneid_map.txt",header = F,sep = "\t")#老师4月给的数据库中的原件
+gene_map<-filter(gene_map,V2!="DOID:4")#去掉顶层DOID:4中的基因
+gene_map<-gene_map[,2:3]
+gene_map<-unique(gene_map)
+# 判断gene_map中的DOID是否全出现在doterms中
+# DOID<-unique(gene_map$V2)
+# all(DOID%in%doterms$DOID)
+
+f_gene<-data.frame(table(gene_map$V3))
+colnames(f_gene)<-c("gene","num")
+#
+# #真路径数据
+# gene<-unlist(filter(doterms,DOID!="DOID:4")$gene.arr)
+# gene<-data.frame(table(gene))
+# colnames(gene)<-c("gene","num")
+# f_gene<-gene
+
+f_gene<-as.character(filter(f_gene,f_gene$num>=30)$gene)
+#得分矩阵设计
+#assign("score_z",matrix(nrow=10,ncol=12),pos = 1)
+#colnames(score_z)<-c("enrichdo2_100","traditional_100","dose_100","enrichdo2_75","traditional_75","dose_75","enrichdo2_50","traditional_50","dose_50","enrichdo2_25","traditional_25","dose_25")
+score_z<-c()
+#提取满足注释基因个数的节点
+sum<-data.frame(table(doterms$gene.len))
+n<-quantile(as.numeric(sum$Var1))[c(2,4)]
+
+#将基因个数为25%到75%的doterm
+#doterm_TF<-apply(doterms,1,function(x){as.numeric(x[10])>=n[1]&as.numeric(x[10])<=n[2]&as.numeric(x[2])>=6})
+doterm_TF<-filter(doterms,gene.len>=n[1],gene.len<=n[2])$DOID
+doterm_TF<-doterms$DOID%in%doterm_TF
+
+# 创建一个集群并注册
+#detectCores()#获得当前最大线程
+cl <- makeCluster(12)
+registerDoParallel(cl)
+result_20<-foreach(i = 1:100, .combine = rbind,.packages = c('DOSE',"EnrichDO2","dplyr")) %dopar% {
+  doterm_sample<-sample(doterms$DOID[doterm_TF],size = 20,replace = F)
+  gene_sample<-unique(unlist(doterms[which(doterms$DOID%in%doterm_sample),"gene.arr"]))
+  gene_sample<-setdiff(gene_sample,f_gene)
+  enrich_2<-doEnrich(gene_sample)
+  enrich_tradition<-doEnrich(gene_sample,traditional = T)
+  alzheimerdose<-enrichDO(gene_sample,ont = "DO",
+                          pvalueCutoff  = 0.05,
+                          pAdjustMethod = "BH",
+                          minGSSize     = 5,
+                          maxGSSize     = 5000,
+                          qvalueCutoff  = 0.05,
+                          readable      = FALSE)
+  score_z[1]<-length(intersect(enrich_2$DOID[1:100],doterm_sample))
+  score_z[2]<-length(intersect(enrich_tradition$DOID[1:100],doterm_sample))
+  score_z[3]<-length(intersect(alzheimerdose@result$ID[1:100],doterm_sample))
+  score_z[4]<-length(intersect(enrich_2$DOID[1:75],doterm_sample))
+  score_z[5]<-length(intersect(enrich_tradition$DOID[1:75],doterm_sample))
+  score_z[6]<-length(intersect(alzheimerdose@result$ID[1:75],doterm_sample))
+  score_z[7]<-length(intersect(enrich_2$DOID[1:50],doterm_sample))
+  score_z[8]<-length(intersect(enrich_tradition$DOID[1:50],doterm_sample))
+  score_z[9]<-length(intersect(alzheimerdose@result$ID[1:50],doterm_sample))
+  score_z[10]<-length(intersect(enrich_2$DOID[1:25],doterm_sample))
+  score_z[11]<-length(intersect(enrich_tradition$DOID[1:25],doterm_sample))
+  score_z[12]<-length(intersect(alzheimerdose@result$ID[1:25],doterm_sample))
+  return(score_z)
+}
+colnames(result_20)<-c("enrichdo2_100","traditional_100","dose_100","enrichdo2_75","traditional_75","dose_75","enrichdo2_50","traditional_50","dose_50","enrichdo2_25","traditional_25","dose_25")
+average_20<-apply(result_20,2,function(x){mean(x)})
+
+write.table(result_20,"仿真数据20（注释）.txt",sep="\t",col.names = T,row.names = F)
+#####################跑30个样本的
+result_30<-foreach(i = 1:100, .combine = rbind,.packages = c('EnrichDO2','DOSE','dplyr')) %dopar% {
+  doterm_sample<-sample(doterms$DOID[doterm_TF],size = 30,replace = F)
+  gene_sample<-unique(unlist(doterms[which(doterms$DOID%in%doterm_sample),"gene.arr"]))
+  gene_sample<-setdiff(gene_sample,f_gene)
+  enrich_2<-doEnrich(gene_sample)
+  enrich_tradition<-doEnrich(gene_sample,traditional = T)
+  alzheimerdose<-enrichDO(gene_sample,ont = "DO",
+                          pvalueCutoff  = 0.05,
+                          pAdjustMethod = "BH",
+                          minGSSize     = 5,
+                          maxGSSize     = 5000,
+                          qvalueCutoff  = 0.05,
+                          readable      = FALSE)
+  score_z[1]<-length(intersect(enrich_2$DOID[1:100],doterm_sample))
+  score_z[2]<-length(intersect(enrich_tradition$DOID[1:100],doterm_sample))
+  score_z[3]<-length(intersect(alzheimerdose@result$ID[1:100],doterm_sample))
+  score_z[4]<-length(intersect(enrich_2$DOID[1:75],doterm_sample))
+  score_z[5]<-length(intersect(enrich_tradition$DOID[1:75],doterm_sample))
+  score_z[6]<-length(intersect(alzheimerdose@result$ID[1:75],doterm_sample))
+  score_z[7]<-length(intersect(enrich_2$DOID[1:50],doterm_sample))
+  score_z[8]<-length(intersect(enrich_tradition$DOID[1:50],doterm_sample))
+  score_z[9]<-length(intersect(alzheimerdose@result$ID[1:50],doterm_sample))
+  score_z[10]<-length(intersect(enrich_2$DOID[1:25],doterm_sample))
+  score_z[11]<-length(intersect(enrich_tradition$DOID[1:25],doterm_sample))
+  score_z[12]<-length(intersect(alzheimerdose@result$ID[1:25],doterm_sample))
+  return(score_z)
+}
+colnames(result_30)<-c("enrichdo2_100","traditional_100","dose_100","enrichdo2_75","traditional_75","dose_75","enrichdo2_50","traditional_50","dose_50","enrichdo2_25","traditional_25","dose_25")
+average_30<-apply(result_30,2,function(x){mean(x)})
+
+write.table(result_30,"仿真数据30（注释）.txt",sep="\t",col.names = T,row.names = F)
+
+# 在计算结束后别忘记关闭集群
+stopImplicitCluster()
+stopCluster(cl)
+save.image("仿真数据中间结果(注释).RData")
+# save(result_30,file="suijijieguo30.RData")
+
+
+
+
+########仿真数据画图########
+setwd("E:/R/EnrichDO2_new/运行结果/4_仿真/")
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(ggsci)
+library(RColorBrewer)
+library(reshape2)
+sample30 <- read.table("仿真数据30（注释）.txt",header = T)
+
+melted_data <- melt(sample30)
+# 添加分组列
+melted_data <- mutate(melted_data, method = case_when(
+  grepl("enrichdo2", variable) ~ "EnrichDO",
+  grepl("traditional", variable) ~ "traditional",
+  grepl("dose", variable) ~ "DOSE"
+))
+melted_data <- mutate(melted_data, threshold = case_when(
+  grepl("100", variable) ~ "top100",
+  grepl("75", variable) ~ "top75",
+  grepl("50", variable) ~ "top50",
+  grepl("25", variable) ~ "top25"
+))
+
+
+melted_data$method=factor(melted_data$method,levels = c('EnrichDO','traditional','DOSE'))
+melted_data$threshold=factor(melted_data$threshold,levels = c('top100','top75','top50','top25'))
+
+ggplot(melted_data, aes(x=method,y=value, fill=method)) +
+  stat_boxplot(geom="errorbar",position=position_dodge(width=0.2),width=0.3,size=0.8)+  ##stat_boxplot 添加误差线，position=position_dodge(width=0.2) 表示将误差线分开，width=0.3 表示设置误差线的宽度，size=1 表示设置误差线的粗细
+  # geom_violin(trim=FALSE, color="white" )+
+  geom_boxplot(aes(),notch = F,size=0.9,lwd= 0.5,fatten= 0.5)+  ##添加箱线图，lwd控制线的粗细，fatten控制箱体的宽度
+  # geom_boxplot(lwd=0.5, fatten=0.5, outlier.shape = NA) +  # 设置离群值样式
+  # geom_jitter(size = 1.5,alpha = 0.6,width = 0.2)+  ##geom_jitter 添加抖动点，size 控制点的大小，alpha 控制点的透明度，width 控制抖动的宽度
+  facet_wrap(~threshold,ncol = 4)+  ##根据threshold列进行分面，ncol=4表示每行最多有4个图
+  facet_grid( ~threshold, drop=TRUE,scale="free", space="free_x")+  ##适用于两个分面变量
+  # scale_fill_manual(values = c("#E69F00", "#56B4E9", "#9670ba"))+
+  scale_fill_manual(values = c("#FFA500", "#56B4E9", "#FFD700"))+
+  # scale_color_npg()+scale_fill_npg()+
+  # stat_compare_means(comparisons = list(c("enrichdo","traditional"),
+  #                                       c("dose","traditional"),
+  #                                       c("enrichdo","dose")),
+  #                    method = "t.test",label = "p.signif")+
+  # ##在箱线图上添加组间比较的标志，使用了t检验来计算p值
+  theme_bw() +  ##设置图表主题为白底
+  theme(panel.background = element_blank(),
+        panel.grid = element_blank(),  ##去掉背景网格
+        axis.text.x = element_text(angle = 30,hjust = 1,size = 10),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_blank(),
+        legend.title =element_blank(),
+        legend.key.size = unit(30,"point"),
+        # strip.background = element_rect(fill = "white", color = "white"),
+        strip.text = element_text(size = 12, face = "bold"),
+        plot.title = element_text(size = 16, hjust = 0.5, face = "bold"))+
+  # theme(strip.background = element_rect(fill=c("white")))+  ##将分面面板的背景颜色设置为白色
+  labs(title="Boxplot of sample30",x="Method",y="Values",fill="Method")
+ggsave("仿真数据30个样本（注释）_boxplot.pdf",width = 8,height = 6,family="GB1")
+
+
+
+##################################################################只针对ENRICHDO算法进行仿真数据的随机减少10%及以上
+setwd("E:/R/EnrichDO2_new/运行结果/4_仿真/")
+library(EnrichDO2)
+library(DOSE)
+library(dplyr)
+library(foreach)
+library(doParallel)
+load("E:/R/EnrichDO2_new/EnrichDO2/R/sysdata.rda")
+####范基因提取
+
+# #注释数据
+gene_map<-read.delim("doid_geneid_map.txt",header = F,sep = "\t")#老师4月给的数据库中的原件
+gene_map<-filter(gene_map,V2!="DOID:4")#去掉顶层DOID:4中的基因
+gene_map<-gene_map[,2:3]
+gene_map<-unique(gene_map)
+
+f_gene<-data.frame(table(gene_map$V3))
+colnames(f_gene)<-c("gene","num")
+
+
+f_gene<-as.character(filter(f_gene,f_gene$num>=30)$gene)
+
+score_z<-c()
+#提取满足注释基因个数的节点
+sum<-data.frame(table(doterms$gene.len))
+n<-quantile(as.numeric(sum$Var1))[c(2,4)]
+
+#将基因个数为25%到75%的doterm
+doterm_TF<-filter(doterms,gene.len>=n[1],gene.len<=n[2])$DOID
+doterm_TF<-doterms$DOID%in%doterm_TF
+
+# 创建一个集群并注册
+#detectCores()#获得当前最大线程
+cl <- makeCluster(12)
+registerDoParallel(cl)
+
+
+result_20<-foreach(i = 1:20, .combine = rbind,.packages = c('DOSE',"EnrichDO2","dplyr")) %dopar% {
+  #不用范基因
+  doterm_sample<-sample(doterms$DOID[doterm_TF],size = 30,replace = F)
+  gene_sample<-unique(unlist(doterms[which(doterms$DOID%in%doterm_sample),"gene.arr"]))
+  #gene_sample<-setdiff(gene_sample,f_gene)
+
+  if(length(gene_sample)<1500){
+    enrich_2000<-doEnrich(gene_sample)
+  }else{
+    enrich_2000<-doEnrich(sample(gene_sample,size = 1500,replace = F))
+  }
+  enrich_1000<-doEnrich(sample(gene_sample,size = 1000,replace = F))
+  enrich_500<-doEnrich(sample(gene_sample,size = 500,replace = F))
+  enrich_250<-doEnrich(sample(gene_sample,size = 250,replace = F))
+  enrich_125<-doEnrich(sample(gene_sample,size = 125,replace = F))
+  enrich_63<-doEnrich(sample(gene_sample,size = 63,replace = F))
+
+  score_z[1]<-length(intersect(enrich_2000$DOID[1:100],doterm_sample))
+  score_z[2]<-length(intersect(enrich_1000$DOID[1:100],doterm_sample))
+  score_z[3]<-length(intersect(enrich_500$DOID[1:100],doterm_sample))
+  score_z[4]<-length(intersect(enrich_250$DOID[1:100],doterm_sample))
+  score_z[5]<-length(intersect(enrich_125$DOID[1:100],doterm_sample))
+  score_z[6]<-length(intersect(enrich_63$DOID[1:100],doterm_sample))
+
+
+  return(score_z)
+}
+colnames(result_20)<-c("2000","1000","500","250","125","63")
+stopImplicitCluster()
+stopCluster(cl)
+
+write.table(result_20,"仿真数据.txt",sep="\t",col.names = T,row.names = F)
